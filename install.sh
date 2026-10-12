@@ -19,7 +19,7 @@ REPO_LIST=(
 NPM_MIRROR="https://registry.npmmirror.com"
 TERMUX_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main"
 TOTAL=7
-SCRIPT_VER="v1.1"
+SCRIPT_VER="v1.2"
 LOG="$HOME/酒馆安装日志.txt"
 
 G='\033[32m'; Y='\033[33m'; R='\033[31m'; C='\033[36m'; P='\033[35m'; B='\033[1m'; N='\033[0m'
@@ -128,12 +128,21 @@ start_st(){
   fi
   termux-wake-lock 2>/dev/null
   echo
-  echo -e "${G}  ✧ 酒馆启动中，浏览器会自动打开～ ヾ(≧▽≦*)o${N}"
+  echo -e "${G}  ✧ 酒馆启动中，准备好以后浏览器会自动打开～ ヾ(≧▽≦*)o${N}"
+  echo -e "${C}  （第一次启动比较慢，可能要等一两分钟）${N}"
   echo -e "${Y}  要关闭酒馆：按 音量下键 + C${N}"
   echo -e "${Y}  没自动打开的话，手动在浏览器输入：127.0.0.1:8000${N}"
   echo -e "${P}  ♪ 这个窗口要一直开着哦，它是酒馆的心脏 (｡•ᴗ-)✧${N}"
   echo
-  (sleep 8; termux-open-url "http://127.0.0.1:8000") &
+  # 等酒馆真正启动好了再打开浏览器，最多等 3 分钟
+  (
+    for _ in $(seq 1 180); do
+      if curl -s -o /dev/null --max-time 2 "http://127.0.0.1:8000"; then
+        termux-open-url "http://127.0.0.1:8000"; exit 0
+      fi
+      sleep 1
+    done
+  ) &
   node server.js
   termux-wake-unlock 2>/dev/null
   echo -e "${C}  酒馆已关闭，下次见～ (ﾉ´▽｀)ﾉ♪${N}"
