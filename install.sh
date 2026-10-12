@@ -19,7 +19,7 @@ REPO_LIST=(
 NPM_MIRROR="https://registry.npmmirror.com"
 TERMUX_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main"
 TOTAL=7
-SCRIPT_VER="v1.0"
+SCRIPT_VER="v1.1"
 LOG="$HOME/酒馆安装日志.txt"
 
 G='\033[32m'; Y='\033[33m'; R='\033[31m'; C='\033[36m'; P='\033[35m'; B='\033[1m'; N='\033[0m'
@@ -376,7 +376,9 @@ echo -e "${C}  ╰────────────────────�
 
 # ---------- 1. 换源 ----------
 step 1 "选择软件源"
+USE_MIRROR=0
 if ask "要换成国内软件源吗？（国内网络强烈建议选 Y）"; then
+  USE_MIRROR=1
   echo "deb $TERMUX_MIRROR stable main" > "$PREFIX/etc/apt/sources.list"
   ok "已切换到清华源"
 else
@@ -388,6 +390,9 @@ step 2 "更新软件包"
 tip
 apt-get update || fail "软件源连不上，检查一下网络，或者重新运行时换源选 Y"
 apt-get -y -o Dpkg::Options::=--force-confnew upgrade || fail "软件包更新失败"
+# 更新时软件源配置可能被新版本覆盖，这里重新设置一次并刷新列表
+[[ $USE_MIRROR == 1 ]] && echo "deb $TERMUX_MIRROR stable main" > "$PREFIX/etc/apt/sources.list"
+apt-get update || fail "软件源连不上，检查一下网络，或者重新运行时换源选 Y"
 ok "软件包更新好啦"
 
 step 3 "安装基础工具"
