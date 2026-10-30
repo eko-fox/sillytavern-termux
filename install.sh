@@ -17,9 +17,21 @@ REPO_LIST=(
   "https://ghfast.top/https://github.com/SillyTavern/SillyTavern.git"
 )
 NPM_MIRROR="https://registry.npmmirror.com"
-TERMUX_MIRROR="https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main"
+# 国内软件源：按顺序尝试，哪个能用就用哪个
+# 地址来自 Termux 官方的国内镜像列表（termux-tools/mirrors/chinese_mainland）
+MIRROR_NAMES=("清华源" "中科大源" "北外源" "阿里云源" "南大源" "上交源")
+MIRROR_URLS=(
+  "https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main"
+  "https://mirrors.ustc.edu.cn/termux/termux-main"
+  "https://mirrors.bfsu.edu.cn/termux/apt/termux-main"
+  "https://mirrors.aliyun.com/termux/termux-main"
+  "https://mirrors.nju.edu.cn/termux/apt/termux-main"
+  "https://mirror.sjtu.edu.cn/termux/termux-main"
+)
+OFFICIAL_MIRROR="https://packages-cf.termux.dev/apt/termux-main"
+TERMUX_MIRROR=""
 TOTAL=7
-SCRIPT_VER="v1.2"
+SCRIPT_VER="v1.4"
 LOG="$HOME/酒馆安装日志.txt"
 
 G='\033[32m'; Y='\033[33m'; R='\033[31m'; C='\033[36m'; P='\033[35m'; B='\033[1m'; N='\033[0m'
@@ -151,7 +163,7 @@ start_st(){
 update_st(){
   cd "$ST_DIR" || return
   echo -e "${Y}  建议更新前先备份一下哦～ (｀・ω・´)${N}"
-  git pull --ff-only || { echo -e "${R}  更新失败：可能改过酒馆文件，或者网络不通 (・_・;)${N}"; return; }
+  git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 pull --ff-only || { echo -e "${R}  更新失败：可能改过酒馆文件，或者网络不通 (・_・;)${N}"; return; }
   npm install --no-audit --no-fund --omit=dev && echo -e "${G}  ✔ 酒馆更新完成 (๑•̀ㅂ•́)و✧${N}"
   [[ -d "$ST_DIR/data/default-user/extensions/JS-Slash-Runner/.git" ]] && helper_st
 }
@@ -244,7 +256,7 @@ helper_st(){
   mkdir -p "$ext"
   if [[ -d "$dir/.git" ]]; then
     echo -e "${C}  更新酒馆助手中… (ง •_•)ง${N}"
-    git -C "$dir" pull --ff-only \
+    git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 -C "$dir" pull --ff-only \
       && { echo -e "${G}  ✔ 酒馆助手已是最新 (๑•̀ㅂ•́)و✧${N}"; return 0; } \
       || { echo -e "${R}  酒馆助手更新失败，可能是网络问题 (・_・;)${N}"; return 1; }
   fi
@@ -254,7 +266,8 @@ helper_st(){
     "https://gh-proxy.com/https://github.com/N0VI028/JS-Slash-Runner.git" \
     "https://ghfast.top/https://github.com/N0VI028/JS-Slash-Runner.git"; do
     echo -e "${C}  ▸ 尝试线路：$url${N}"
-    if timeout 180 git clone --progress --depth 1 "$url" "$dir"; then
+    echo -e "${C}    （20 秒没动静会自动换下一条线路）${N}"
+    if timeout 180 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 clone --progress --depth 1 "$url" "$dir"; then
       echo -e "${G}  ✔ 酒馆助手安装好啦，重启酒馆后在扩展里就能看到 (≧∇≦)ﾉ${N}"
       return 0
     fi
@@ -385,11 +398,29 @@ echo -e "${C}  ╰────────────────────�
 
 # ---------- 1. 换源 ----------
 step 1 "选择软件源"
-USE_MIRROR=0
+set_source(){ echo "deb $1 stable main" > "$PREFIX/etc/apt/sources.list"; }
+# 依次试国内源，第一个能刷新成功的就用它
+pick_mirror(){
+  local i
+  for i in "${!MIRROR_URLS[@]}"; do
+    info "试试${MIRROR_NAMES[$i]}…"
+    set_source "${MIRROR_URLS[$i]}"
+    if apt-get -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20 update; then
+      TERMUX_MIRROR="${MIRROR_URLS[$i]}"
+      ok "已切换到${MIRROR_NAMES[$i]}"
+      return 0
+    fi
+    warn "${MIRROR_NAMES[$i]}现在用不了，换下一个"
+  done
+  return 1
+}
+
 if ask "要换成国内软件源吗？（国内网络强烈建议选 Y）"; then
-  USE_MIRROR=1
-  echo "deb $TERMUX_MIRROR stable main" > "$PREFIX/etc/apt/sources.list"
-  ok "已切换到清华源"
+  if ! pick_mirror; then
+    warn "国内源都连不上，先用官方源试试（可能会比较慢）"
+    TERMUX_MIRROR="$OFFICIAL_MIRROR"
+    set_source "$TERMUX_MIRROR"
+  fi
 else
   info "好哒，保持原来的源～"
 fi
@@ -397,11 +428,11 @@ fi
 # ---------- 2. 安装基础软件 ----------
 step 2 "更新软件包"
 tip
-apt-get update || fail "软件源连不上，检查一下网络，或者重新运行时换源选 Y"
-apt-get -y -o Dpkg::Options::=--force-confnew upgrade || fail "软件包更新失败"
+apt-get update || fail "软件源连不上，检查一下网络（关掉 VPN 或换成手机流量试试），再重新运行一次"
+apt-get -y -o Dpkg::Options::=--force-confnew upgrade || fail "软件包更新失败，检查一下网络再重新运行一次"
 # 更新时软件源配置可能被新版本覆盖，这里重新设置一次并刷新列表
-[[ $USE_MIRROR == 1 ]] && echo "deb $TERMUX_MIRROR stable main" > "$PREFIX/etc/apt/sources.list"
-apt-get update || fail "软件源连不上，检查一下网络，或者重新运行时换源选 Y"
+[[ -n "$TERMUX_MIRROR" ]] && set_source "$TERMUX_MIRROR"
+apt-get update || fail "软件源连不上，检查一下网络（关掉 VPN 或换成手机流量试试），再重新运行一次"
 ok "软件包更新好啦"
 
 step 3 "安装基础工具"
@@ -420,7 +451,8 @@ else
   cloned=0
   for url in "${REPO_LIST[@]}"; do
     info "尝试线路：$url"
-    if timeout 300 git clone --progress --depth 1 -b "$ST_BRANCH" "$url" "$ST_DIR"; then
+    info "  （20 秒没动静会自动换下一条线路）"
+    if timeout 600 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 clone --progress --depth 1 -b "$ST_BRANCH" "$url" "$ST_DIR"; then
       cloned=1; break
     fi
     rm -rf "$ST_DIR"
