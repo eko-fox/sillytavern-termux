@@ -31,7 +31,7 @@ MIRROR_URLS=(
 OFFICIAL_MIRROR="https://packages-cf.termux.dev/apt/termux-main"
 TERMUX_MIRROR=""
 TOTAL=7
-SCRIPT_VER="v1.4"
+SCRIPT_VER="v1.5"
 LOG="$HOME/酒馆安装日志.txt"
 
 G='\033[32m'; Y='\033[33m'; R='\033[31m'; C='\033[36m'; P='\033[35m'; B='\033[1m'; N='\033[0m'
@@ -445,21 +445,33 @@ ok "Node $(node -v) 已就绪"
 
 # ---------- 3. 下载酒馆 ----------
 step 4 "下载酒馆本体"
-if [[ -d "$ST_DIR/.git" ]]; then
+OLD_ST=""
+if [[ -f "$ST_DIR/package.json" ]]; then
   warn "发现已经装过酒馆了，跳过下载（想更新请在菜单里选「更新」）"
 else
+  # 文件夹在但不完整（比如之前下载到一半断了）：先挪到一边，保住里面可能有的聊天数据
+  if [[ -e "$ST_DIR" ]]; then
+    OLD_ST="${ST_DIR}_旧_$(date +%Y%m%d_%H%M%S)"
+    mv "$ST_DIR" "$OLD_ST" || fail "酒馆文件夹不完整，而且挪不动它，可以手动删掉 ~/SillyTavern 再试"
+    warn "发现一个不完整的酒馆文件夹，已经挪到 $(basename "$OLD_ST")，重新下载"
+  fi
   cloned=0
   for url in "${REPO_LIST[@]}"; do
     info "尝试线路：$url"
     info "  （20 秒没动静会自动换下一条线路）"
-    if timeout 600 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 clone --progress --depth 1 -b "$ST_BRANCH" "$url" "$ST_DIR"; then
+    if timeout 600 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 clone --progress --depth 1 -b "$ST_BRANCH" "$url" "$ST_DIR" \
+       && [[ -f "$ST_DIR/package.json" ]]; then
       cloned=1; break
     fi
-    rm -rf "$ST_DIR"
+    rm -rf "$ST_DIR"   # 这里只会删掉这次没下完的，旧文件夹已经挪走了
     warn "这条线路不通，换下一条"
   done
   [[ $cloned == 1 ]] || fail "所有线路都下载失败了，可能是网络问题，过会儿再试试"
   ok "酒馆下载完成"
+  # 旧文件夹里有聊天数据的话，搬回来
+  if [[ -n "$OLD_ST" && -d "$OLD_ST/data" ]]; then
+    mv "$OLD_ST/data" "$ST_DIR/data" && ok "已经把旧文件夹里的聊天和角色卡搬回来了"
+  fi
 fi
 
 # ---------- 4. 安装依赖 ----------
