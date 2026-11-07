@@ -31,7 +31,7 @@ MIRROR_URLS=(
 OFFICIAL_MIRROR="https://packages-cf.termux.dev/apt/termux-main"
 TERMUX_MIRROR=""
 TOTAL=7
-SCRIPT_VER="v1.5"
+SCRIPT_VER="v1.6"
 LOG="$HOME/酒馆安装日志.txt"
 
 G='\033[32m'; Y='\033[33m'; R='\033[31m'; C='\033[36m'; P='\033[35m'; B='\033[1m'; N='\033[0m'
@@ -163,7 +163,7 @@ start_st(){
 update_st(){
   cd "$ST_DIR" || return
   echo -e "${Y}  建议更新前先备份一下哦～ (｀・ω・´)${N}"
-  git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 pull --ff-only || { echo -e "${R}  更新失败：可能改过酒馆文件，或者网络不通 (・_・;)${N}"; return; }
+  git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=40 pull --ff-only || { echo -e "${R}  更新失败：可能改过酒馆文件，或者网络不通 (・_・;)${N}"; return; }
   npm install --no-audit --no-fund --omit=dev && echo -e "${G}  ✔ 酒馆更新完成 (๑•̀ㅂ•́)و✧${N}"
   [[ -d "$ST_DIR/data/default-user/extensions/JS-Slash-Runner/.git" ]] && helper_st
 }
@@ -256,22 +256,24 @@ helper_st(){
   mkdir -p "$ext"
   if [[ -d "$dir/.git" ]]; then
     echo -e "${C}  更新酒馆助手中… (ง •_•)ง${N}"
-    git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 -C "$dir" pull --ff-only \
+    git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=40 -C "$dir" pull --ff-only \
       && { echo -e "${G}  ✔ 酒馆助手已是最新 (๑•̀ㅂ•́)و✧${N}"; return 0; } \
       || { echo -e "${R}  酒馆助手更新失败，可能是网络问题 (・_・;)${N}"; return 1; }
   fi
-  local url
-  for url in \
-    "https://github.com/N0VI028/JS-Slash-Runner.git" \
-    "https://gh-proxy.com/https://github.com/N0VI028/JS-Slash-Runner.git" \
-    "https://ghfast.top/https://github.com/N0VI028/JS-Slash-Runner.git"; do
-    echo -e "${C}  ▸ 尝试线路：$url${N}"
-    echo -e "${C}    （20 秒没动静会自动换下一条线路）${N}"
-    if timeout 180 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 clone --progress --depth 1 "$url" "$dir"; then
-      echo -e "${G}  ✔ 酒馆助手安装好啦，重启酒馆后在扩展里就能看到 (≧∇≦)ﾉ${N}"
-      return 0
-    fi
-    rm -rf "$dir"
+  local url round
+  for round in 1 2; do
+    for url in \
+      "https://github.com/N0VI028/JS-Slash-Runner.git" \
+      "https://gh-proxy.com/https://github.com/N0VI028/JS-Slash-Runner.git" \
+      "https://ghfast.top/https://github.com/N0VI028/JS-Slash-Runner.git"; do
+      echo -e "${C}  ▸ 尝试线路：$url${N}"
+      echo -e "${C}    （40 秒没动静会自动换下一条线路）${N}"
+      if timeout 300 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=40 clone --progress --depth 1 "$url" "$dir"; then
+        echo -e "${G}  ✔ 酒馆助手安装好啦，重启酒馆后在扩展里就能看到 (≧∇≦)ﾉ${N}"
+        return 0
+      fi
+      rm -rf "$dir"
+    done
   done
   echo -e "${R}  酒馆助手没装上，可能是网络问题，之后在菜单里选 4 再试试 (╥﹏╥)${N}"
   return 1
@@ -456,17 +458,21 @@ else
     warn "发现一个不完整的酒馆文件夹，已经挪到 $(basename "$OLD_ST")，重新下载"
   fi
   cloned=0
-  for url in "${REPO_LIST[@]}"; do
-    info "尝试线路：$url"
-    info "  （20 秒没动静会自动换下一条线路）"
-    if timeout 600 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=20 clone --progress --depth 1 -b "$ST_BRANCH" "$url" "$ST_DIR" \
-       && [[ -f "$ST_DIR/package.json" ]]; then
-      cloned=1; break
-    fi
-    rm -rf "$ST_DIR"   # 这里只会删掉这次没下完的，旧文件夹已经挪走了
-    warn "这条线路不通，换下一条"
+  # 网络时好时坏的话，所有线路最多轮流试 3 遍
+  for round in 1 2 3; do
+    [[ $round -gt 1 ]] && { warn "第 $round 轮重试，网络不稳的话多试几次常常就好了"; sleep 3; }
+    for url in "${REPO_LIST[@]}"; do
+      info "尝试线路：$url"
+      info "  （40 秒没动静会自动换下一条线路）"
+      if timeout 900 git -c http.lowSpeedLimit=1000 -c http.lowSpeedTime=40 clone --progress --depth 1 -b "$ST_BRANCH" "$url" "$ST_DIR" \
+         && [[ -f "$ST_DIR/package.json" ]]; then
+        cloned=1; break 2
+      fi
+      rm -rf "$ST_DIR"   # 这里只会删掉这次没下完的，旧文件夹已经挪走了
+      warn "这条线路不通，换下一条"
+    done
   done
-  [[ $cloned == 1 ]] || fail "所有线路都下载失败了，可能是网络问题，过会儿再试试"
+  [[ $cloned == 1 ]] || fail "试了好几轮都没下载下来，网络可能不太稳。换个网络（Wi-Fi / 手机流量 / 开关 VPN）再运行一次试试"
   ok "酒馆下载完成"
   # 旧文件夹里有聊天数据的话，搬回来
   if [[ -n "$OLD_ST" && -d "$OLD_ST/data" ]]; then
